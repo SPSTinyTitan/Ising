@@ -1,0 +1,161 @@
+import torch
+import cv2
+import numpy as np
+
+# This Ising Model is faithful to the Metropolis algorithm, following random walks from each coordinate
+# It is pretty slow, but runs faster when the dimensions are smaller
+
+# Note: By its nature, the Metropolis algorithm isn't very good near the critical temperature
+# and the Wolff algorithm is intended to resolve the model near the critical point
+# The Wolff algorithm basically, looks at clusters of the same spin and flips those clusters
+# as opposed to doing single flips
+# But for temperatures that aren't near critical, Metropolis works fine
+
+def energyspinsite(lattice,side,J,i,j):
+    # 2 adjacent neighbors if in corner, 3 if on 1 edge, 4 otherwise
+    # I'm assuming a finite number of dipoles in a region
+    if i == 0:
+        if j == 0:
+            cont1 = lattice[i][j] * lattice[i][j + 1]
+            cont2 = lattice[i][j] * lattice[i + 1][j]
+            energysite = -J*(cont1 + cont2)
+        elif j == (side - 1):
+            cont1 = lattice[i][j] * lattice[i][j - 1]
+            cont2 = lattice[i][j] * lattice[i + 1][j]
+            energysite = -J*(cont1 + cont2)
+        else:
+            cont1 = lattice[i][j] * lattice[i][j - 1]
+            cont2 = lattice[i][j] * lattice[i + 1][j]
+            cont3 = lattice[i][j] * lattice[i][j + 1]
+            energysite = -J*(cont1 + cont2 + cont3)
+    elif i == (side - 1):
+        if j == 0:
+            cont1 = lattice[i][j] * lattice[i][j + 1]
+            cont2 = lattice[i][j] * lattice[i - 1][j]
+            energysite = -J*(cont1 + cont2)
+        elif j == (side - 1):
+            cont1 = lattice[i][j] * lattice[i][j - 1]
+            cont2 = lattice[i][j] * lattice[i - 1][j]
+            energysite = cont1 + cont2
+        else:
+            cont1 = lattice[i][j] * lattice[i][j - 1]
+            cont2 = lattice[i][j] * lattice[i - 1][j]
+            cont3 = lattice[i][j] * lattice[i][j + 1]
+            energysite = -J*(cont1 + cont2 + cont3)
+    elif j == 0:
+        cont1 = lattice[i][j] * lattice[i + 1][j]
+        cont2 = lattice[i][j] * lattice[i - 1][j]
+        cont3 = lattice[i][j] * lattice[i][j + 1]
+        energysite = -J*(cont1 + cont2 + cont3)
+    elif j == (side - 1):
+        cont1 = lattice[i][j] * lattice[i + 1][j]
+        cont2 = lattice[i][j] * lattice[i - 1][j]
+        cont3 = lattice[i][j] * lattice[i][j - 1]
+        energysite = -J*(cont1 + cont2 + cont3)
+    else:
+        cont1 = lattice[i][j] * lattice[i][j - 1]
+        cont2 = lattice[i][j] * lattice[i - 1][j]
+        cont3 = lattice[i][j] * lattice[i][j + 1]
+        cont4 = lattice[i][j] * lattice[i + 1][j]
+        energysite = -J*(cont1 + cont2 + cont3 + cont4)
+    return energysite
+
+def energy(lattice,side,J):
+    sum = 0
+    for i in range(side):
+        for j in range(side):
+            sum += energyspinsite(lattice,side,J,i,j)
+    H = sum
+    return H.item()
+
+def draw(tensor, side):
+    # Make a black image
+    img = np.zeros((side, side, 3), np.uint8)
+    for i in range(side):
+        for j in range(side):
+            # Black pixels correspond to spin = -1 and white corresponds to spin = 1
+            if tensor[i][j] != -1:
+                img[i][j] = 255
+
+    img = cv2.resize(img, (300, 300))
+    cv2.imshow("Ising Model", img)
+    cv2.waitKey(1)
+
+def randwalk(lattice,side,J,k,T,x,y):
+    copy = lattice
+
+    # Feel free to change T from 1 to like 3500 to test thermal noise
+    beta = (k * T) ** -1
+
+    # Save a copy of the old coordinates
+    x0 = x
+    y0 = y
+
+    # Generate a NEARBY point by centering 2 Gaussians on the old points
+    x = torch.round(torch.normal(mean=x.clone().detach(), std=1.0, out=None)).item()
+    y = torch.round(torch.normal(mean=y.clone().detach(), std=1.0, out=None)).item()
+
+    # Restricting the random walk to the lattice region
+    if x < 0:
+        x = 0
+    if x >= side:
+        x = side - 1
+    if y < 0:
+        y = 0
+    if y >= side:
+        y = side - 1
+
+    H0 = energyspinsite(lattice, side, J, int(x), int(y))
+    copy[int(x)][int(y)] = -1 * copy[int(x)][int(y)]
+    H1 = energyspinsite(copy, side, J, int(x), int(y))
+    if H1 > H0:
+        prob = torch.exp(torch.tensor([-beta * (H1 - H0)])).item()
+        if torch.rand(1).item() > prob:
+            copy[int(x)][int(y)] = -1 * copy[int(x)][int(y)]
+            x = x0
+            y = y0
+            # Important: If the spin is flipped, the new pt is now the origin for new Gaussians
+            # If the spin isn't flipped, the old pt is used as the origin again
+    return copy, x, y
+
+def step(lattice,side,J,k,T):
+    # Generate an array with a submatrix of a coordinate pair at each element
+    coord = torch.empty(side, side, 1, 2)
+    for i in range(side):
+        for j in range(side):
+            coord[i][j][0][0] = j
+            coord[i][j][0][1] = i
+
+    # Apply the random walk to each coordinate and alter the coordinate matrix
+    # Also, update the lattice
+    for i in range(side):
+        for j in range(side):
+            lattice, coord[i][j][0][0], coord[i][j][0][1] = randwalk(lattice,side,J,k,T,coord[i][j][0][0],coord[i][j][0][1])
+    return lattice
+
+def main():
+    # Adjust side length, J, T, and the number of steps/iterations as desired
+    side = 75
+
+    # Made k = 1 for convenience, but it should be the proper value of Boltzmann's constant
+    # k = 1.38064852e-23 Joules/K
+    # For reference, critical temperature follows T_c = 2J/(k*ln(sqrt(2)+1))
+    k = 1
+    J = 1
+    T = 1
+    iter = 1000
+
+    # Note: The max/min Hamiltonian is quadratic wrt the lattice's side length
+    maxenergy = -J * (-4 * (side - 2)**2 - 12 * (side - 2) - 8)
+    minenergy = -1 * maxenergy
+    lattice = 2*torch.randint(0, 2, [side, side])-1
+    # Because of how the lattice is sampled, the initial Hamiltonian tends to avg around 0
+
+    print("Hamiltonian:", energy(lattice, side, J))
+    print("Max Energy:", maxenergy, "\nMin Energy:", minenergy)
+
+    for i in range(iter):
+        draw(lattice, side)
+        lattice = step(lattice,side,J,k,T)
+
+main()
