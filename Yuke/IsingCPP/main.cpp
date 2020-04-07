@@ -6,19 +6,28 @@
 #include <chrono>
 
 int main(int argc, const char * argv[]) {
-    ising model(1024,1024,1,-1,1.5);
-    //model.draw();
-    //cv::waitKey(0);
+    int iters = 4000;
+    ising model(512,512,1,-1,1);
     auto startTime = std::chrono::system_clock::now();
-    
-    for (int i = 0; i < 100; i++){
-        //for (int j = 0; j < 10; j++)
-            model.step();
-        //model.draw();
+    for (int i = 0; i < iters; i++){
+        for (int j = 0; j < 1; j++)
+            model.step_optim();
+        model.draw();
     }
     auto endTime = std::chrono::system_clock::now();
-
-    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    std::cout << "Optimized: " << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() << std::endl;
+    
+//    ising model2(256,256,1,-1,1.5);
+//
+//    startTime = std::chrono::system_clock::now();
+//    for (int i = 0; i < iters; i++){
+//        for (int j = 0; j < 1; j++)
+//            model2.step_optim();
+//        //model.draw();
+//    }
+//    endTime = std::chrono::system_clock::now();
+//    std::cout << "Optimized: " << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() << std::endl;
+//
     return 0;
 }
 

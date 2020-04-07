@@ -7,30 +7,36 @@
 //
 
 #include "ising.hpp"
+using namespace arma;
+
+
+
 ising::ising(){
 }
 
 //Randomly initilize matrix with -1 or 1
 ising::ising(unsigned int x_size, unsigned int y_size){
-    grid = arma::randi(x_size, y_size, arma::distr_param(0,1)) * 2 - 1;
+    grid = randi(x_size, y_size, distr_param(0,1)) * 2 - 1;
 }
 
 ising::ising(unsigned int x_size, unsigned int y_size, float k, float j, float t){
     K = k;
     J = j;
     T = t;
-    grid = arma::randi(x_size, y_size, arma::distr_param(0,1)) * 2 - 1;
+    grid = randi(x_size, y_size, distr_param(0,1)) * 2 - 1;
+    update = linspace<uvec>(0, x_size * y_size - 1, x_size * y_size);
+    prob = zeros<fmat>(x_size, y_size);
 }
 
 void ising::resize(unsigned int x_size, unsigned int y_size){
-    grid = arma::randi(x_size, y_size, arma::distr_param(0,1)) * 2 - 1;
+    grid = randi(x_size, y_size, distr_param(0,1)) * 2 - 1;
 }
 
 //Convolute with Hamiltonian matrix
-arma::fmat ising::deltaE() const{
-    arma::fmat kernel({{0, 1, 0}, {1, 0, 1}, {0, 1, 0}});
-    arma::fmat fgrid = arma::conv_to<arma::fmat>::from(grid);
-    return arma::conv2(fgrid , -2 * J * kernel, "same") % fgrid;
+fmat ising::deltaE() const{
+    fmat kernel({{0, 1, 0}, {1, 0, 1}, {0, 1, 0}});
+    fmat fgrid = conv_to<fmat>::from(grid);
+    return conv2(fgrid , -2 * J * kernel, "same") % fgrid;
 }
 
 //Shift calculation for Energy. This is exceedingly slow
@@ -40,13 +46,39 @@ arma::fmat ising::deltaE() const{
 //    return arma::conv2(fgrid , -2 * J * sgrid, "same") % fgrid;
 //}
 
+fmat ising::deltaE_optim() const{
+    
+    fmat kernel({{0, 1, 0}, {1, 0, 1}, {0, 1, 0}});
+    fmat fgrid = conv_to<fmat>::from(grid);
+    return conv2(fgrid , -2 * J * kernel, "same") % fgrid;
+}
+
 void ising::step(){
-    //arma::fmat delta = deltaE();
+    //fmat delta = deltaE();
     //delta.print("Delta: ");
-    arma::fmat prob = arma::exp(-deltaE()/(K * T));
+    fmat prob = exp(-deltaE()/(K * T));
     //prob.print("PROB: ");
-    arma::umat flip = (arma::randu<arma::fmat>(grid.n_cols, grid.n_rows) < prob) % (arma::randu<arma::fmat>(grid.n_cols, grid.n_rows) < 0.1);
-    grid = grid % (arma::conv_to<arma::imat>::from(flip)*(-2) + 1);
+    umat flip = (randu<fmat>(grid.n_cols, grid.n_rows) < prob) % (randu<fmat>(grid.n_cols, grid.n_rows) < 0.1);
+    grid = grid % (conv_to<imat>::from(flip)*(-2) + 1);
+}
+
+void ising::step_optim(){
+    //fmat delta = deltaE();
+    //delta.print("Delta: ");
+    prob(update) = exp(-(deltaE()(update))/(K * T));
+    //prob.print("PROB: ");
+    umat flip = (randu<fmat>(grid.n_cols, grid.n_rows) < prob) % (randu<fmat>(grid.n_cols, grid.n_rows) < 0.1);
+    uvec ind = find(flip == 1);
+    grid(ind) = -grid(ind);
+    update = needs_update(ind);
+}
+
+uvec ising::needs_update(uvec ind){
+    uvec x = join_cols(ind - 1, ind + 1);
+    uvec y = join_cols(ind - grid.n_rows, ind + grid.n_rows);
+    uvec up = join_cols(x, y);
+    up = up(find(up >= 0 && up <= (grid.n_rows * grid.n_cols - 1)));
+    return join_cols(ind, up);
 }
 
 void ising::print(){
@@ -54,9 +86,12 @@ void ising::print(){
 }
 
 void ising::draw(){
-    arma::mat image = arma::conv_to<arma::mat>::from(grid);
-    const cv::Mat img(grid.n_cols, grid.n_rows, CV_64F, image.memptr());
+    mat image = conv_to<mat>::from(grid);
+    cv::Mat img(grid.n_cols, grid.n_rows, CV_64F, image.memptr());
+    //const cv::ogl::Buffer texture(img);
     cv::namedWindow("Ising");
     cv::imshow("Ising", img);
     cv::waitKey(1);
 }
+
+
