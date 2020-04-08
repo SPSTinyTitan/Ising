@@ -13,6 +13,7 @@
 #include <opencv2/core/opengl.hpp>
 #include <vector>
 #include <string>
+#include <random>
 
 class ising{
     
@@ -31,11 +32,16 @@ public:
     void resize(unsigned int x_size, unsigned int y_size);
     arma::fmat deltaE() const;
     arma::fmat deltaE_optim() const;
+    arma::fmat deltaE_update(arma::uvec pos) const;
+    arma::fmat deltaE_shift() const;
     void step();
     void step_optim();
     arma::uvec needs_update(arma::uvec ind);
+    arma::uvec needs_update_toroid(arma::uvec ind);
+    void step_walk();
     void print();
-    void draw();
+    void draw(char* name, int waittime);
+    
 
 };
 
